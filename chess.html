@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html>
+<body oncontextmenu="return false;">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/1.4.5/socket.io.min.js"></script>
+
+
+<canvas id="myCanvas" onmouseup = "clickEvent(event)" width="450" height="400" style="border:1px solid #d3d3d3;">
+Your browser does not support the HTML5 canvas tag.</canvas> <br>
+<input type="checkbox" id="moves" value="moves"> Show Moves?</input>
+<input type="checkbox" id="score" value="score"> Show Score?</input>
+<input type="checkbox" id="setup" value="setup"> Set up board</input>
+
+<script>
+
+  var c = document.getElementById("myCanvas");
+  var ctx = c.getContext("2d");
+  
+      var socket = io();
+  
+board();
+initpieces();
+
+	var white = {
+		castleShort:true,
+		castleLong:true,
+		lastmove:{x:-1,y:-1,type:-1,prevX:-1,prevY:-1},
+		legalMoves:[],
+		score:0,
+		t:-1
+	}
+	var black = {
+		castleShort:true,
+		castleLong:true,
+		lastmove:{x:-1,y:-1,type:-1,prevX:-1,prevY:-1},
+		legalMoves:[],
+		score:0,
+		t:1
+	}
+var deepMode = 0;
+
+var select = false;
+var selected = {};
+
+var turn = -1;
+var score = 0;
+var move = 1;
+
+var mateScore = 0;
+var depth = 0;
+
+var score_bar = new Image();
+score_bar.src = "public/GUI/score.png";
+
+capture = -1;
+
+var promotion = {
+	type:"",
+	team:-1,
+	a:false,
+};
+	white.legalMoves = legalMoveList(-1,pieces);
+	black.legalMoves = legalMoveList(1,pieces);
+	
+
+		
+	socket.emit('calculate',{ 
+		white:white,
+		team:black,
+		move:0,
+		turn:turn,
+		black:black,
+		pieces:pieces,
+	});
+	
+function board() {
+	board = [];
+    square = {};
+    color = "#fffdd0";
+    for (var x = 0; x < 8; x++) {
+        if (color == "#fffdd0")
+            color = "#b5651d";
+        else
+            color = "#fffdd0";
+    	for (var y = 0; y < 8; y++) {
+			square = {};
+    		square.x = x;
+            square.y = y;
+            if (color == "#fffdd0")
+            	color = "#b5651d";
+            else
+            	color = "#fffdd0";
+            square.color = color;
+            board.push(square);
+    	} 
+    }
+}
+setInterval(function(){
+	ctx.clearRect(0, 0, 450, 400);
+	for (var i in board) {
+		ctx.fillStyle = board[i].color;
+		ctx.fillRect(board[i].x * 50, board[i].y * 50,50,50);
+	}
+if (document.getElementById("score").checked == true) {
+	score = white.score - black.score;
+	
+	ctx.fillStyle = "black";
+	ctx.textAlign = "center";
+	ctx.font = "10px Arial";
+	ctx.fillText("Depth: " + depth,420,25);
+	ctx.font = "15px Arial";
+	if (mateScore != 0) {
+		if (mateScore > 0) {
+			var teamS = "+";
+		}
+		if (mateScore < 0) {
+			var teamS = "-";
+		}
+		ctx.fillText(teamS + "M" + Math.abs(mateScore),425,45);
+	}
+	if (mateScore == 0) {
+		ctx.fillText(Math.floor(score * 100) / 100,425,45);
+	}
+	
+	ctx.textAlign = "start";
+	ctx.drawImage(score_bar,425-(29/2),50);
+	
+	ctx.fillStyle = "White";
+	ctx.fillRect(425-(29/2) + 2,50 + 2,25,320);
+	
+	ctx.fillStyle = "Black";
+	var bar = -160 * black.score/white.score;
+	if (mateScore > 0)
+		bar = 0;
+	if (mateScore < 0)
+		bar = -320;
+	if (bar < -320) {
+		bar = -320;
+	}
+	ctx.fillRect(425-(29/2) + 2,50 + 2 + 320,25,bar);
+	}
+	
+	for (var i in pieces) {
+		ctx.drawImage(pieces[i].img,pieces[i].x * 50 + 1, pieces[i].y * 50 + 1,48,48);
+		if (pieces[i].type == "K" && pieces[i].team == -1 && !inCheck(-1,pieces)) {
+			ctx.fillStyle = "red";
+			ctx.globalAlpha = 0.3;
+			ctx.fillRect(pieces[i].x * 50, pieces[i].y * 50,50,50);
+			ctx.globalAlpha = 1;
+		}
+		if (pieces[i].type == "K" && pieces[i].team == 1 && !inCheck(1,pieces)) {
+			ctx.fillStyle = "red";
+			ctx.globalAlpha = 0.3;
+			ctx.fillRect(pieces[i].x * 50, pieces[i].y * 50,50,50);
+			ctx.globalAlpha = 1;
+		}
+		
+		
+	}
+	ctx.font = "15px Arial";
+	ctx.fillStyle = "#894c16";
+	ctx.fillText("8",3,15);
+	ctx.fillText("6",3,115);
+	ctx.fillText("4",3,215);
+	ctx.fillText("2",3,315);
+	ctx.fillText("b",90,396);
+	ctx.fillText("d",190,396);
+	ctx.fillText("f",290,396);
+	ctx.fillText("h",390,396);
+	
+	ctx.fillStyle = "#ffe6d0";
+	ctx.fillText("7",3,65);	
+	ctx.fillText("5",3,165);
+	ctx.fillText("3",3,265);
+	ctx.fillText("1",3,365);
+	ctx.fillText("a",40,396);
+	ctx.fillText("c",140,396);
+	ctx.fillText("e",240,396);
+	ctx.fillText("g",340,396);
+	
+	if (select) {
+		ctx.fillStyle = "yellow";
+		ctx.globalAlpha = 0.3;
+		ctx.fillRect(selected.x * 50, selected.y * 50,50,50);
+		ctx.globalAlpha = 1;
+	}
+	
+	if (promotion.a) {
+	
+		if (promotion.piece.y != 0 && promotion.piece.y != 7) {
+			promotion.a = false;
+		}
+	
+		if (promotion.a)
+			ctx.drawImage(promotion.img,200-50,200-50);
+		
+	}
+	
+	var splice = -1;
+	for (var j = 0;j < white.legalMoves.length;j++) {
+		for (var e = 0;e < pieces.length;e++) {
+			if (pieces[e].x == white.legalMoves[j].x && pieces[e].y == white.legalMoves[j].y && pieces[e].team == -1) {
+				splice = j;
+			}
+		}
+	}
+	if (splice != -1) {
+		white.legalMoves.splice(splice,1);
+	}
+	
+	var splice = -1;
+	for (var j = 0;j < black.legalMoves.length;j++) {
+		for (var e = 0;e < pieces.length;e++) {
+			if (pieces[e].x == black.legalMoves[j].x && pieces[e].y == black.legalMoves[j].y && pieces[e].team == 1) {
+				splice = j;
+			}
+		}
+	}
+	
+	if (splice != -1) {
+		black.legalMoves.splice(splice,1);
+	}
+	
+	for (var i in pieces) {
+		ctx.fillStyle = "Black";
+		if (pieces[i].type == "K" && pieces[i].team == -1 && !inCheck(-1,pieces)) {
+			if (white.legalMoves.length == 0) {
+				ctx.textAlign = "center";
+				ctx.font = "35px Arial";
+				ctx.fillText("Checkmate, Black wins!",200,200);
+				ctx.textAlign = "start";
+			}
+		}
+		if (pieces[i].type == "K" && pieces[i].team == 1 && !inCheck(1,pieces)) {
+			if (black.legalMoves.length == 0) {
+				ctx.textAlign = "center";
+				ctx.font = "35px Arial";
+				ctx.fillText("Checkmate, White wins!",200,200);
+				ctx.textAlign = "start";
+			}
+		}
+		
+		if (pieces[i].type == "K" && pieces[i].team == -1 && inCheck(-1,pieces) && turn == -1) {
+			if (white.legalMoves.length == 0) {
+				ctx.textAlign = "center";
+				ctx.font = "35px Arial";
+				ctx.fillText("Stalemate",200,200);
+				ctx.textAlign = "start";
+			}
+		}
+		if (pieces[i].type == "K" && pieces[i].team == 1 && inCheck(1,pieces) && turn == 1) {
+			if (black.legalMoves.length == 0) {
+				ctx.textAlign = "center";
+				ctx.font = "35px Arial";
+				ctx.fillText("Stalemate",200,200);
+				ctx.textAlign = "start";
+			}
+		}
+		
+		
+	}
+	
+	var team;
+	if (turn == -1)
+		team = white;
+	if (turn == 1)
+		team = black;
+	
+	if (document.getElementById("moves").checked == true) {
+	ctx.beginPath();
+	ctx.moveTo(team.legalMoves[0].prevX * 50 + 25, team.legalMoves[0].prevY * 50 + 25);
+	ctx.lineTo(team.legalMoves[0].x * 50 + 25, team.legalMoves[0].y * 50 + 25);
+	ctx.stroke();
+	}
+	
+}, 1000/16);
+function initpieces() {
+	pieces = [];
+	
+	//Pawns
+    for (var x = 0; x < 8; x++) {
+	newPiece("P","public/Brown/pawn.png",1,x,1);
+	newPiece("P","public/White/pawn.png",-1,x,6);
+	}
+	
+	//Rooks
+	newPiece("R","public/Brown/rook.png",1,7,0);
+	newPiece("R","public/Brown/rook.png",1,0,0);
+	newPiece("R","public/White/rook.png",-1,7,7);
+	newPiece("R","public/White/rook.png",-1,0,7);
+	
+	//Knights
+	newPiece("N","public/Brown/knight.png",1,6,0);
+	newPiece("N","public/Brown/knight.png",1,1,0);
+	newPiece("N","public/White/knight.png",-1,6,7);
+	newPiece("N","public/White/knight.png",-1,1,7);
+	
+	//Bishops
+	newPiece("B","public/Brown/Bishop.png",1,5,0);
+	newPiece("B","public/Brown/Bishop.png",1,2,0);
+	newPiece("B","public/White/Bishop.png",-1,5,7);
+	newPiece("B","public/White/Bishop.png",-1,2,7);
+	
+	//Queens
+	newPiece("Q","public/Brown/Queen.png",1,3,0);
+	newPiece("Q","public/White/Queen.png",-1,3,7);
+	
+	//Kings
+	newPiece("K","public/Brown/King.png",1,4,0);
+	newPiece("K","public/White/King.png",-1,4,7);
+	
+}
+
+function newPiece(type,img,team,x,y) {
+	piece = {};
+	piece.x = x;
+	piece.y = y;
+	piece.startX = x;
+	piece.startY = y;
+	piece.team = team;
+	piece.type = type;
+	piece.img = new Image();
+	piece.img.src = img;
+	pieces.push(piece);
+}
+
+function clickEvent(event) {
+	mX = event.offsetX;
+	mY = event.offsetY;
+	var type = event.button;
+	
+	if (type != 0) {
+		selected = {};
+		select = false;
+	}
+	else if (mX <= 400) {
+		var square = {
+			f:1,
+			r:1
+		}
+		
+		if (mX < 50) {
+			square.f = 0; //a
+		}
+		if (mX >= 50 && mX < 100) {
+			square.f = 1; //b
+		}
+		if (mX >= 100 && mX < 150) {
+			square.f = 2; //c
+		}
+		if (mX >= 150 && mX < 200) {
+			square.f = 3; //d
+		}
+		if (mX >= 200 && mX < 250) {
+			square.f = 4; //e
+		}
+		if (mX >= 250 && mX < 300) {
+			square.f = 5; //f
+		}
+		if (mX >= 300 && mX < 350) {
+			square.f = 6; //g
+		}
+		if (mX >= 350 && mX < 400) {
+			square.f = 7; //h
+		}
+		
+		if (mY < 50) {
+			square.r = 0; //1st rank
+		}
+		if (mY >= 50 && mY < 100) {
+			square.r = 1; //2nd rank
+		}
+		if (mY >= 100 && mY < 150) {
+			square.r = 2; //3rd rank
+		}
+		if (mY >= 150 && mY < 200) {
+			square.r = 3; //4th rank
+		}
+		if (mY >= 200 && mY < 250) {
+			square.r = 4; //5th rank
+		}
+		if (mY >= 250 && mY < 300) {
+			square.r = 5; //6th rank
+		}
+		if (mY >= 300 && mY < 350) {
+			square.r = 6; //7th rank
+		}
+		if (mY >= 350 && mY < 400) {
+			square.r = 7; //8th rank
+		}
+		if (promotion.a) {
+			if (square.r == 3 && square.f == 3) {
+				if (promotion.piece.team == -1)
+					var img = "public/White/Queen.png";
+				if (promotion.piece.team == 1)
+					var img = "public/Brown/Queen.png";
+				newPiece("Q",img,promotion.piece.team,promotion.piece.x,promotion.piece.y);
+				
+				for (var e = 0; e < pieces.length; e++) {
+					if (pieces[e] == promotion.piece)
+						pieces.splice(e,1);
+				}				
+				
+				promotion.a = false;
+			}
+			if (square.r == 3 && square.f == 4) {
+				if (promotion.piece.team == -1)
+					var img = "public/White/Rook.png";
+				if (promotion.piece.team == 1)
+					var img = "public/Brown/Rook.png";
+				newPiece("R",img,promotion.piece.team,promotion.piece.x,promotion.piece.y);
+				
+				for (var e = 0; e < pieces.length; e++) {
+					if (pieces[e] == promotion.piece)
+						pieces.splice(e,1);
+				}
+				
+				promotion.a = false;
+			}
+			if (square.r == 4 && square.f == 3) {
+				if (promotion.piece.team == -1)
+					var img = "public/White/Knight.png";
+				if (promotion.piece.team == 1)
+					var img = "public/Brown/Knight.png";
+				newPiece("N",img,promotion.piece.team,promotion.piece.x,promotion.piece.y);
+				
+				for (var e = 0; e < pieces.length; e++) {
+					if (pieces[e] == promotion.piece)
+						pieces.splice(e,1);
+				}
+				
+				promotion.a = false;
+			}
+			if (square.r == 4 && square.f == 4) {
+				if (promotion.piece.team == -1)
+					var img = "public/White/Bishop.png";
+				if (promotion.piece.team == 1)
+					var img = "public/Brown/Bishop.png";
+				newPiece("B",img,promotion.piece.team,promotion.piece.x,promotion.piece.y);
+				
+				for (var e = 0; e < pieces.length; e++) {
+					if (pieces[e] == promotion.piece)
+						pieces.splice(e,1);
+				}
+				
+				promotion.a = false;
+			}
+		}
+		if (!promotion.a) {
+		swap = true;
+		if (select) {
+			swap = moveFunc(square);	
+		}
+		
+		if (swap) {
+		for (var i = 0; i < pieces.length; i++) {
+		
+			var piece = pieces[i];
+			if (piece.x == square.f && piece.y == square.r && select == false) {
+				if (piece.team == turn || document.getElementById("setup").checked == true) {
+					select = true;
+					selected = piece;
+					return;
+				}
+			}
+			else if (piece.x == square.f && piece.y == square.r && select == true && piece.team == turn) {
+				if (selected.team == piece.team || document.getElementById("setup").checked == true) {
+					select = true;
+					selected = piece;
+					return;
+				}
+			}
+		}
+		}
+		
+		}
+	}
+}
+function moveFunc(square) {
+	a = true;
+	if (legalMoves(square,selected,true,pieces) || document.getElementById("setup").checked == true) {
+	var pieceMoved = {
+		x:selected.x,
+		y:selected.y
+	};
+	
+	for (var e = 0; e < pieces.length; e++) {
+		if (pieces[e].x == square.f && pieces[e].y == square.r) {
+			piece = pieces[e];
+					
+			if (piece.team == selected.team) {
+				a = false;
+			}
+			if (piece.team != selected.team) {
+				capture = e;
+				
+				if (selected.team == -1)
+					white.lastmove = {type:selected.type,prevX:selected.x,prevY:selected.y,x:square.f,y:square.r};
+				if (selected.team == 1)
+					black.lastmove = {type:selected.type,prevX:selected.x,prevY:selected.y,x:square.f,y:square.r};
+
+				selected.y = square.r;
+				selected.x = square.f;
+				
+		if (selected.type == "P") {
+			if (selected.y == 0) {
+				promotion = {
+				type:"",
+				piece:selected,
+				a:true,
+				img: new Image(),
+				};
+				promotion.img.src = "public/GUI/promote_white.png";
+			}
+			if (selected.y == 7) {
+				promotion = {
+				piece:selected,
+				a:true,
+				img: new Image(),
+				};
+				promotion.img.src = "public/GUI/promote_black.png"
+			}
+		}
+				
+				turn *= -1;
+				
+				select = false;
+				
+			}
+		}
+	}
+	
+	if (select && a) {
+	
+		if (selected.team == -1)
+			white.lastmove = {type:selected.type,prevX:selected.x,prevY:selected.y,x:square.f,y:square.r};
+		if (selected.team == 1)
+			black.lastmove = {type:selected.type,prevX:selected.x,prevY:selected.y,x:square.f,y:square.r};
+		
+		selected.y = square.r;
+		selected.x = square.f;
+		
+		if (selected.type == "P") {
+			if (selected.y == 0) {
+				promotion = {
+				type:"",
+				piece:selected,
+				a:true,
+				img: new Image(),
+				};
+				promotion.img.src = "public/GUI/promote_white.png";
+			}
+			if (selected.y == 7) {
+				promotion = {
+				piece:selected,
+				a:true,
+				img: new Image(),
+				};
+				promotion.img.src = "public/GUI/promote_black.png"
+			}
+		}
+		
+		turn *= -1;
+		
+		select = false;
+	}
+	if (!inCheck(selected.team,pieces)) {
+		
+		selected.y = pieceMoved.y;
+		selected.x = pieceMoved.x;
+		
+		turn *= -1;
+		
+		if (selected.team == -1) {
+			if (white.lastmove.type == "K" && white.lastmove.prevX == 4 && white.lastmove.x == 6) {
+				rook.x = 7;
+				white.castleShort = true;
+			}
+			if (white.lastmove.type == "K" && white.lastmove.prevX == 4 && white.lastmove.x == 2) {
+				rook.x = 0;
+				white.castleLong = true;
+			}
+		}
+		if (selected.team == 1) {
+			if (black.lastmove.type == "K" && black.lastmove.prevX == 4 && black.lastmove.x == 6) {
+				rook.x = 7;
+				black.castleShort = true;
+			}
+			if (black.lastmove.type == "K" && black.lastmove.prevX == 4 && black.lastmove.x == 2) {
+				rook.x = 0;
+				black.castleLong = true;
+			}
+		}
+	}
+	else {
+		if (capture != -1) {
+			pieces.splice(capture,1);
+			capture = -1;
+		}
+	}
+	}
+	
+	calculateScore();
+	
+	return false;
+}
+function legalMoves(square,selected,moving,pieceSet) {
+	for (var i = 0; i < pieceSet.length; i++) {
+		if (pieceSet[i].x == square.f && pieceSet[i].y == square.r && pieceSet[i].team == selected.team) {
+			return false;
+			}
+	}
+
+	if (selected.type == "R") { //Rook movement
+	
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = square.r - selected.y;
+		move.f = square.f - selected.x;
+		
+		if (square.r == selected.y || square.f == selected.x) {
+		
+			if (selected.team == -1 && moving) {
+				if (selected.x == 7)
+					white.castleShort = false;
+				if (selected.x == 0)
+					white.castleLong = false;
+			}	
+			if (selected.team == 1 && moving) {
+				if (selected.x == 7)
+					black.castleShort = false;
+				if (selected.x == 0)
+					black.castleLong = false;
+			}
+		
+			var fm = 0;
+			var rm = 0;
+			if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+			var r = selected.y + rm;
+			var f = selected.x + fm;
+			if (rm != 0) {
+				while (r != square.r) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.r != r) {
+								return false;
+							}
+						}
+					r += rm;
+				}
+			}
+			if (fm != 0) {
+				while (f != square.f) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.f != f) {
+								return false;
+							}
+						}
+					f += fm;
+				}
+			}
+				return true;
+		}
+		else {
+			return false;
+		}
+	}
+	
+	if (selected.type == "P") { //Pawn movement
+		if (square.r == selected.y + selected.team && square.f == selected.x) { //Move forward
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == square.f && pieceSet[e].y == square.r) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		else if (selected.y == 1 && selected.team == 1 && square.r == 3 && square.f == selected.x) { //Move forward twice (black)
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == square.f && pieceSet[e].y == square.r) {
+					return false;
+				}
+				if (pieceSet[e].x == square.f && pieceSet[e].y == 2) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		else if (selected.y == 6 && selected.team == -1 && square.r == 4 && square.f == selected.x) { //Move forward twice (white)
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == square.f && pieceSet[e].y == square.r) {
+					return false;
+				}
+				if (pieceSet[e].x == square.f && pieceSet[e].y == 5) {
+					return false;
+				}
+			}
+			
+			return true;
+		}
+		else if (selected.team == -1 && black.lastmove.y == selected.y && black.lastmove.prevY == 1 && Math.abs(black.lastmove.x - selected.x) == 1 && Math.abs(square.f - selected.x) == 1 && square.r == selected.y + selected.team && square.f == black.lastmove.x) { //En passant white
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == black.lastmove.x && pieceSet[e].y == black.lastmove.y && pieceSet[e].type == "N")
+					capture = e;
+			}
+			return true;
+		}
+		else if (selected.team == 1 && white.lastmove.y == selected.y && white.lastmove.prevY == 6 && Math.abs(white.lastmove.x - selected.x) == 1 && Math.abs(square.f - selected.x) == 1 && square.r == selected.y + selected.team && square.f == white.lastmove.x) { //En passant black
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == white.lastmove.x && pieceSet[e].y == white.lastmove.y && pieceSet[e].type == "N")
+					capture = e;
+			}
+			return true;
+		}
+		else if (Math.abs(square.f - selected.x) == 1 && square.r == selected.y + selected.team) { //Capture diagonally
+			for (var e = 0; e < pieceSet.length; e++) {
+				if (pieceSet[e].x == square.f && pieceSet[e].y == square.r) {
+					return true;
+				}
+			}
+			
+			return false;
+		}
+		else {
+			return false;
+		}
+	}
+	
+	else if (selected.type == "N") { //Knight Movement
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = Math.abs(square.r - selected.y);
+		move.f = Math.abs(square.f - selected.x);
+		if (move.r == 2 && move.f == 1) {
+			return true;
+		}
+		else if (move.r == 1 && move.f == 2) {
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+	else if (selected.type == "K") { //King movement
+	
+		var king = {};
+		for (var i = 0; i < pieceSet.length; i++) {
+			if (pieceSet[i].type == "K" && pieceSet[i].team != selected.team)
+				king = pieceSet[i];
+		}
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = Math.abs(square.r - king.y);
+		move.f = Math.abs(square.f - king.x);
+		if (move.r <= 1 && move.f <= 1) {
+			return false;
+		}
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = Math.abs(square.r - selected.y);
+		move.f = Math.abs(square.f - selected.x);
+		
+		if (move.r <= 1 && move.f <= 1 && moving) {
+			if (selected.team == -1) {
+				white.castleShort = false;
+				white.castleLong = false;
+			}	
+			if (selected.team == 1) {
+				black.castleShort = false;
+				black.castleLong = false;
+			}				
+			return true;
+		}
+		if (move.r <= 1 && move.f <= 1 && !moving) {
+			return true;
+		}
+		if (selected.team == -1) {
+			team = white;
+		}	
+		if (selected.team == 1) {
+			team = black;
+		}	
+		if (move.f == 2) { //Castle
+			if (square.f == 6 && team.castleShort && inCheck(team.t,pieceSet)) { //Short
+				rook = {x:-1};
+				for (var e = 0; e < pieceSet.length; e++) {
+					if (pieceSet[e].x == 6 && pieceSet[e].y == square.r) {
+						return false;
+					}
+					else if (pieceSet[e].x == 5 && pieceSet[e].y == square.r) {
+						return false;
+					}
+					else if (pieceSet[e].x == 7 && pieceSet[e].y == square.r && pieceSet[e].type == "R") {
+						rook = pieceSet[e];
+					}
+				}
+				if (rook.x == 7 && moving) {
+					rook.x = 5;
+					
+				if (selected.team == -1) {
+					white.castleShort = false;
+					white.castleLong = false;
+				}	
+				if (selected.team == 1) {
+					black.castleShort = false;
+					black.castleLong = false;
+				}
+					
+					return true;
+				}
+				if (rook.x == 7 && !moving) {
+					return true;
+				}
+			}
+			if (square.f == 2 && team.castleLong && inCheck(team.t,pieceSet)) { //Long
+				rook = {x:8};
+				for (var e = 0; e < pieceSet.length; e++) {
+					if (pieceSet[e].x == 3 && pieceSet[e].y == square.r) {
+						return false;
+					}
+					else if (pieceSet[e].x == 2 && pieceSet[e].y == square.r) {
+						return false;
+					}
+					else if (pieceSet[e].x == 1 && pieceSet[e].y == square.r) {
+						return false;
+					}
+					else if (pieceSet[e].x == 0 && pieceSet[e].y == square.r && pieceSet[e].type == "R") {
+						rook = pieceSet[e];
+					}
+				}
+				if (rook.x == 0 && moving) {
+					rook.x = 3;
+					
+				if (selected.team == -1) {
+					white.castleShort = false;
+					white.castleLong = false;
+				}	
+				if (selected.team == 1) {
+					black.castleShort = false;
+					black.castleLong = false;
+				}
+
+					
+					return true;
+				}
+				if (rook.x == 0 && !moving) {
+					return true;
+				}
+			}
+		}
+
+		
+		else {
+			return false;
+		}
+		
+	}
+	else if (selected.type == "B") { //Bishop movement
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = square.r - selected.y;
+		move.f = square.f - selected.x;
+		
+		if (Math.abs(move.r) == Math.abs(move.f)) {
+				var fm = 0;
+				var rm = 0;
+				if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+				var r = selected.y + rm;
+				var f = selected.x + fm;
+				while (r != square.r) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.r != r) {
+								return false;
+							}
+						}
+					f += fm;
+					r += rm;
+				}
+			return true;
+		}
+		else {
+			return false;
+		}
+		
+	}
+	
+
+	
+	else if (selected.type == "Q") { //Queen movement
+		var move = {
+			r:0,
+			f:0
+		}
+		move.r = square.r - selected.y;
+		move.f = square.f - selected.x;
+		
+		if (Math.abs(move.r) == Math.abs(move.f)) {
+				var fm = 0;
+				var rm = 0;
+				if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+				var r = selected.y + rm;
+				var f = selected.x + fm;
+				while (r != square.r) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.r != r) {
+								return false;
+							}
+						}
+					f += fm;
+					r += rm;
+				}
+			return true;
+		}
+		else if (square.r == selected.y || square.f == selected.x) {
+			var fm = 0;
+			var rm = 0;
+			if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+			var r = selected.y + rm;
+			var f = selected.x + fm;
+			if (rm != 0) {
+				while (r != square.r) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.r != r) {
+								return false;
+							}
+						}
+					r += rm;
+				}
+			}
+			if (fm != 0) {
+				while (f != square.f) {
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == f && pieceSet[e].y == r && square.f != f) {
+								return false;
+							}
+						}
+					f += fm;
+				}
+			}
+				return true;
+		}
+		else {
+			return false;
+		}
+		
+	}
+	
+	else {
+	return true;
+	}
+}
+function inCheck(team,pieceSet) {
+	king = {};
+	for (var i = 0; i < pieceSet.length; i++) {
+		if (pieceSet[i].type == "K" && pieceSet[i].team == team)
+			king = pieceSet[i];
+	}
+	for (var i = 0; i < pieceSet.length; i++) {
+		var piece = pieceSet[i];
+		if (piece.team != team) {
+			
+			if (piece.type == "P" && i != capture) {
+				if (Math.abs(king.x - piece.x) == 1 && king.y == piece.y + piece.team) {
+					capture = -1;
+					return false;
+				}
+			}
+			else if (piece.type == "N" && i != capture) {
+				var move = {
+					r:0,
+					f:0
+				}
+				move.r = Math.abs(king.y - piece.y);
+				move.f = Math.abs(king.x - piece.x);
+				if (move.r == 2 && move.f == 1) {
+					capture = -1;
+					return false;
+				}
+				else if (move.r == 1 && move.f == 2) {
+					capture = -1;
+					return false;
+				}
+			}
+			else if (piece.type == "B" && i != capture) {
+				var move = {
+					r:0,
+					f:0
+				}
+				move.r = king.y - piece.y;
+				move.f = king.x - piece.x;
+				
+				if (Math.abs(move.r) == Math.abs(move.f)) {
+						var fm = 0;
+						var rm = 0;
+						if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+						var r = piece.y + rm;
+						var f = piece.x + fm;
+						while (r != king.y + rm) {
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y;
+									}
+								}
+							}
+							f += fm;
+							r += rm;
+						}
+						var r = piece.y + rm;
+						var f = piece.x + fm;
+						while (r != king.y + rm) {
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y;
+									}
+								}
+							}
+							f -= fm;
+							r += rm;
+						}
+				}
+				
+			}
+			else if (piece.type == "R" && i != capture) {
+				var move = {
+					r:0,
+					f:0
+				}
+				move.r = king.y - piece.y;
+				move.f = king.x - piece.x;
+				if (king.y == piece.y || king.x == piece.x) {
+					var fm = 0;
+					var rm = 0;
+					if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+					var r = piece.y;
+					var f = piece.x;
+					if (rm != 0) {
+						while (r != king.y + rm) {
+							r += rm;
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y + rm;
+									}
+								}
+							}
+						}
+					}
+					if (fm != 0) {
+						while (f != king.x + fm) {
+							f += fm;
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										f = king.x + fm;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			
+			else if (piece.type == "Q" && i != capture) {
+				var move = {
+					r:0,
+					f:0
+				}
+				move.r = king.y - piece.y;
+				move.f = king.x - piece.x;
+				if (king.y == piece.y || king.x == piece.x) {
+					var fm = 0;
+					var rm = 0;
+					if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+					var r = piece.y;
+					var f = piece.x;
+					if (rm != 0) {
+						while (r != king.y + rm) {
+							r += rm;
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y + rm;
+									}
+								}
+							}
+						}
+					}
+					if (fm != 0) {
+						while (f != king.x + fm) {
+							f += fm;
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										f = king.x + fm;
+									}
+								}
+							}
+						}
+					}
+				}
+				
+				var move = {
+					r:0,
+					f:0
+				}
+				move.r = king.y - piece.y;
+				move.f = king.x - piece.x;
+				
+				if (Math.abs(move.r) == Math.abs(move.f)) {
+						var fm = 0;
+						var rm = 0;
+						if (move.r > 0) {rm = 1;} if (move.r < 0) {rm = -1;} if (move.f > 0) {fm = 1;} if (move.f < 0) {fm = -1;}
+						var r = piece.y + rm;
+						var f = piece.x + fm;
+						while (r != king.y + rm) {
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y;
+									}
+								}
+							}
+							f += fm;
+							r += rm;
+						}
+						var r = piece.y + rm;
+						var f = piece.x + fm;
+						while (r != king.y + rm) {
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == f && pieceSet[e].y == r) {
+									if (pieceSet[e] == king) {
+										capture = -1;
+										return false;
+									}
+									else {
+										r = king.y;
+									}
+								}
+							}
+							f -= fm;
+							r += rm;
+						}
+				}
+				
+			}
+			
+		}
+	}
+	return true;
+}
+function legalMoveList(team,pieceSet) {
+	var moves = [];
+	
+	for (var i = 0; i < pieceSet.length; i++) {
+		var piece = pieceSet[i];
+		if (piece.team == team) {
+			if (piece.type == "P") {
+				for (var j = -1; j <= 1; j++) {
+					var square = {f:piece.x + j,r:piece.y + piece.team};
+					if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+						piece.x += j;
+						piece.y += piece.team;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.x -= j;
+							piece.y -= piece.team;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + j,y:piece.y + piece.team});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.x -= j;
+							piece.y -= piece.team;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+				}
+				var square = {f:piece.x,r:piece.y + (piece.team * 2)};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.y += piece.team * 2;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y -= piece.team * 2;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x,y:piece.y + (piece.team * 2)});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y -= piece.team * 2;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+			}
+			else if (piece.type == "N") {
+				var square = {f:piece.x + 1,r:piece.y + 2};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x += 1;
+					piece.y += 2;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y -= 2;
+						piece.x -= 1;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + 1,y:piece.y + 2});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y -= 2;
+						piece.x -= 1;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x + 2,r:piece.y + 1};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x += 2;
+					piece.y += 1;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y -= 1;
+						piece.x -= 2;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + 2,y:piece.y + 1});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y -= 1;
+						piece.x -= 2;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x - 1,r:piece.y + 2};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x -= 1;
+					piece.y += 2;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y -= 2;
+						piece.x += 1;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - 1,y:piece.y + 2});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y -= 2;
+						piece.x += 1;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x - 2,r:piece.y + 1};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x -= 2;
+					piece.y += 1;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y -= 1;
+						piece.x += 2;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - 2,y:piece.y + 1});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y -= 1;
+						piece.x += 2;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x + 1,r:piece.y - 2};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x += 1;
+					piece.y -= 2;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y += 2;
+						piece.x -= 1;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + 1,y:piece.y - 2});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y += 2;
+						piece.x -= 1;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x + 2,r:piece.y - 1};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x += 2;
+					piece.y -= 1;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y += 1;
+						piece.x -= 2;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + 2,y:piece.y - 1});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y += 1;
+						piece.x -= 2;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x - 1,r:piece.y - 2};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x -= 1;
+					piece.y -= 2;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y += 2;
+						piece.x += 1;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - 1,y:piece.y - 2});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y += 2;
+						piece.x += 1;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+				var square = {f:piece.x - 2,r:piece.y - 1};
+				if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+					piece.x -= 2;
+					piece.y -= 1;
+					var a = {x:-1};
+					for (var e = 0; e < pieceSet.length; e++) {
+						if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+							a = pieceSet[e];
+							pieceSet.splice(e,1);
+						}
+					}
+					if (inCheck(team,pieceSet)) {
+						piece.y += 1;
+						piece.x += 2;
+						moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - 2,y:piece.y - 1});
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+					else {
+						piece.y += 1;
+						piece.x += 2;
+						if (a.x != -1) {
+							pieceSet.push(a);
+						}
+					}
+				}
+			}
+			else if (piece.type == "R") {
+				for (var j = 0; j <= 7; j++) {
+					var square = {f:piece.x,r:j};
+					if (legalMoves(square,piece,false,pieceSet)) {
+						var y = piece.y;
+						piece.y = j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y = y;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x,y:j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y = y;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+					var square = {f:j,r:piece.y};
+					if (legalMoves(square,piece,false,pieceSet)) {
+						var x = piece.x;
+						piece.x = j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.x = x;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:j,y:piece.y});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.x = x;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+				}
+			}
+			else if (piece.type == "B") {
+				for (var j = -7;j <= 7; j++) {
+					var square = {f:piece.x + j,r:piece.y + j};
+					if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+						piece.y += j;
+						piece.x += j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y -= j;
+							piece.x -= j;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + j,y:piece.y + j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y -= j;
+							piece.x -= j;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+					var square = {f:piece.x - j,r:piece.y + j};
+					if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+						piece.y += j;
+						piece.x -= j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y -= j;
+							piece.x += j;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - j,y:piece.y + j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y -= j;
+							piece.x += j;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+				}
+			}
+			else if (piece.type == "Q") {
+				for (var j = -7;j <= 7; j++) {
+					var square = {f:piece.x + j,r:piece.y + j};
+					if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+						piece.y += j;
+						piece.x += j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y -= j;
+							piece.x -= j;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + j,y:piece.y + j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y -= j;
+							piece.x -= j;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+					var square = {f:piece.x - j,r:piece.y + j};
+					if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+						piece.y += j;
+						piece.x -= j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y -= j;
+							piece.x += j;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x - j,y:piece.y + j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y -= j;
+							piece.x += j;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+				}
+				for (var j = 0; j <= 7; j++) {
+					var square = {f:piece.x,r:j};
+					if (legalMoves(square,piece,false,pieceSet)) {
+						var y = piece.y;
+						piece.y = j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.y = y;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x,y:j});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.y = y;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+					var square = {f:j,r:piece.y};
+					if (legalMoves(square,piece,false,pieceSet)) {
+						var x = piece.x;
+						piece.x = j;
+						var a = {x:-1};
+						for (var e = 0; e < pieceSet.length; e++) {
+							if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+								a = pieceSet[e];
+								pieceSet.splice(e,1);
+							}
+						}
+						if (inCheck(team,pieceSet)) {
+							piece.x = x;
+							moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:j,y:piece.y});
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+						else {
+							piece.x = x;
+							if (a.x != -1) {
+								pieceSet.push(a);
+							}
+						}
+					}
+				}
+			}
+			else if (piece.type == "K") {
+				for (var x = -2;x <= 2; x++) {
+					for (var y = -1;y <= 1; y++) {
+						var square = {f:piece.x + x,r:piece.y + y};
+						if (legalMoves(square,piece,false,pieceSet) && square.f >= 0 && square.f <= 7 && square.r >= 0 && square.r <= 7) {
+							piece.y += y;
+							piece.x += x;
+							var a = {x:-1};
+							for (var e = 0; e < pieceSet.length; e++) {
+								if (pieceSet[e].x == square.f && pieceSet[e].y == square.r && pieceSet[e].team != piece.team) {
+									a = pieceSet[e];
+									pieceSet.splice(e,1);
+								}
+							}
+							if (inCheck(team,pieceSet)) {
+								piece.y -= y;
+								piece.x -= x;
+								moves.push({type:piece.type,prevX:piece.x,prevY:piece.y,x:piece.x + x,y:piece.y + y});
+								if (a.x != -1) {
+									pieceSet.push(a);
+								}
+							}
+							else {
+								piece.y -= y;
+								piece.x -= x;
+								if (a.x != -1) {
+									pieceSet.push(a);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	return moves;
+}
+
+
+function calculateScore() {
+	white.legalMoves = legalMoveList(-1,pieces);
+	black.legalMoves = legalMoveList(1,pieces);
+	
+	mateScore = 0;
+	
+	if (turn == -1) {
+		socket.emit('calculate',{ 
+			white:white,
+			team:white,
+			move:move,
+			turn:turn,
+			black:black,
+			pieces:pieces,
+		});
+	}
+	if (turn == 1) {
+		socket.emit('calculate',{ 
+			white:white,
+			team:black,
+			move:move,
+			turn:turn,
+			black:black,
+			pieces:pieces,
+		});
+	}
+	
+	if (turn == -1)
+		move++;
+	return;
+}
+
+    socket.on('result',function(data){ 
+		console.log(data.depth);
+        if (data.team.t == -1)
+			white = data.team;
+        if (data.team.t == 1)
+			black = data.team;
+		
+		mateScore = data.mateScore;
+		depth = data.depth;
+    });
+
+</script>
